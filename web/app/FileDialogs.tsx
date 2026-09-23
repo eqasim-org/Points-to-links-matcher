@@ -7,18 +7,21 @@ export function FileDialog({ title, children, onClose }: { title: string; childr
   return <dialog ref={ref} className="file-dialog" onCancel={onClose}><header><h2>{title}</h2><button onClick={onClose} aria-label="Close dialog">×</button></header>{children}</dialog>;
 }
 
-export function MappingDialog({ title, columns, fields, initial, onApply, onClose }: {
+export function MappingDialog({ title, columns, fields, initial, onApply, onClose, coordinateChoice = false }: {
   title: string; columns: string[]; fields: { key: string; label: string; optional?: boolean }[];
-  initial: Record<string, string>; onApply: (mapping: Record<string, string>) => void | Promise<void>; onClose: () => void;
+  initial: Record<string, string>; onApply: (mapping: Record<string, string>) => void | Promise<void>; onClose: () => void; coordinateChoice?: boolean;
 }) {
   const [mapping, setMapping] = useState(initial);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const geometryMode = mapping.coordinateSource === "geometry";
+  const visibleFields = fields.filter(field => !coordinateChoice || (field.key === "geometry" ? geometryMode : ["lon", "lat"].includes(field.key) ? !geometryMode : true));
   return <FileDialog title={title} onClose={onClose}><form onSubmit={async event => {
     event.preventDefault(); setBusy(true); setError("");
     try { await onApply(mapping); } catch (error) { setError(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); }
   }}><p>Choose how the file's columns should be used. Coordinates must be longitude/latitude in degrees (WGS84).</p>
-    {fields.map(field => <label className="mapping-field" key={field.key}>{field.label}<select required={!field.optional} value={mapping[field.key] || ""} onChange={event => setMapping({ ...mapping, [field.key]: event.target.value })}><option value="">{field.optional ? "None" : "Select a column"}</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select></label>)}
+    {coordinateChoice && <label className="mapping-field">Point location source<select value={mapping.coordinateSource || "columns"} onChange={event => setMapping({ ...mapping, coordinateSource: event.target.value })}><option value="columns">Longitude + latitude columns</option><option value="geometry">Geometry column (WKT POINT)</option></select><small>WKT format: POINT (longitude latitude). WGS84 / EPSG:4326 only.</small></label>}
+    {visibleFields.map(field => <label className="mapping-field" key={field.key}>{field.label}<select required={!field.optional} value={mapping[field.key] || ""} onChange={event => setMapping({ ...mapping, [field.key]: event.target.value })}><option value="">{field.optional ? "None" : "Select a column"}</option>{columns.map(column => <option key={column} value={column}>{column}</option>)}</select></label>)}
     {error && <p role="alert" className="file-error">{error}</p>}<footer><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button disabled={busy} type="submit">{busy ? "Loading…" : "Apply mapping"}</button></footer>
   </form></FileDialog>;
 }
@@ -47,7 +50,7 @@ export function ExportDialog({ columns, makeCsv, onClose, onSaved }: { columns: 
     } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setError(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); }
   }}><label className="mapping-field">File name<input required value={filename} onChange={event => setFilename(event.target.value)} /></label>
     <p>{picker ? "Choose the folder and file name in the Save As dialog." : "This browser cannot open a Save As picker. Enable “Ask where to save each file” in its download settings, or open this app in Chrome or Edge."}</p>
-    <p>Include the point ID and link ID columns if you want to resume from this CSV later. Geometry is always excluded.</p>
+    <p>Include the point ID and link ID columns if you want to resume from this CSV later. Link geometry is always excluded.</p>
     <div className="column-actions"><button type="button" onClick={() => setSelected(columns.map(column => column.key))}>Select all</button><button type="button" onClick={() => setSelected([])}>Clear</button></div>
     <div className="export-columns">{columns.map(column => <label key={column.key}><input type="checkbox" checked={selected.includes(column.key)} onChange={event => setSelected(event.target.checked ? [...selected, column.key] : selected.filter(key => key !== column.key))} />{column.label}<small>{column.header}</small></label>)}</div>
     {error && <p className="file-error" role="alert">{error}</p>}<footer><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" disabled={!selected.length || busy}>{busy ? "Saving…" : picker ? "Save as…" : "Download CSV"}</button></footer>

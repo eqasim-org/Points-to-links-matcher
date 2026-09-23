@@ -10,7 +10,7 @@ const network = JSON.parse(read('sample-network.geojson'));
 const info = JSON.parse(read('demo-info.json'));
 const source = readFileSync(new URL('../app/MapMatcher.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('MapMatcher.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const wanted = new Set(['parseCsv', 'pointsFromCsv', 'normalized', 'gpkgLineString', 'sameRoadGeometry']);
+const wanted = new Set(['parsePointGeometry', 'parseCsv', 'pointsFromCsv', 'normalized', 'gpkgLineString', 'sameRoadGeometry']);
 const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && wanted.has(n.name?.text)).map(n => n.getText(ast)).join('\n');
 const api = vm.runInNewContext(`${ts.transpile(functions, {target:ts.ScriptTarget.ES2022})}; ({pointsFromCsv,gpkgLineString,sameRoadGeometry})`);
 const points = api.pointsFromCsv(read('sample-points.csv').toString('utf8'));

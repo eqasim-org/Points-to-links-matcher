@@ -7,11 +7,40 @@ import assert from 'node:assert/strict';
 // Exercise the actual import/parser functions without starting WebGL or a browser.
 const source = readFileSync(new URL('../app/MapMatcher.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('MapMatcher.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const wanted = new Set(['parseCsv', 'pointsFromCsv', 'normalized', 'csvCell', 'addMatches', 'removeMatch', 'pointCollection', 'sameRoadGeometry', 'nextUnmatchedPoint', 'arrowCollection', 'selectedLinkCollection']);
+const wanted = new Set(['togglePointSelection', 'targetsForPoint', 'parsePointGeometry', 'parseCsv', 'pointsFromCsv', 'normalized', 'csvCell', 'addMatches', 'removeMatch', 'pointCollection', 'sameRoadGeometry', 'nextUnmatchedPoint', 'arrowCollection', 'selectedLinkCollection']);
 const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && wanted.has(node.name?.text)).map(node => node.getText(ast)).join('\n');
 const js = ts.transpile(functions, { target: ts.ScriptTarget.ES2022 });
-const api = vm.runInNewContext(`${js}; ({pointsFromCsv, parseCsv, csvCell, addMatches, removeMatch, pointCollection, sameRoadGeometry, nextUnmatchedPoint, selectedLinkCollection})`);
+const api = vm.runInNewContext(`${js}; ({togglePointSelection, targetsForPoint, pointsFromCsv, parseCsv, csvCell, addMatches, removeMatch, pointCollection, sameRoadGeometry, nextUnmatchedPoint, selectedLinkCollection})`);
 const mapping = { id: 'Sensor', lon: 'Easting', lat: 'Northing' };
+
+test('WKT geometry import preserves IDs and attributes without coordinate columns', () => {
+  const points = api.pointsFromCsv('detid,direction,geometry\n001,North,POINT (6.12 46.2)', {id:'detid',coordinateSource:'geometry',geometry:'geometry'});
+  assert.equal(points[0].id, '001');
+  assert.equal(points[0].lon, 6.12);
+  assert.equal(points[0].lat, 46.2);
+  assert.equal(points[0].properties.geometry, 'POINT (6.12 46.2)');
+  assert.equal(points[0].properties.direction, 'North');
+});
+
+test('WKT accepts whitespace, scientific notation, and explicit WGS84 SRID', () => {
+  const points = api.pointsFromCsv('id,geom\na, srid=4326; point ( +6.12e0  4.62e1 ) ', {id:'id',coordinateSource:'geometry',geometry:'geom'});
+  assert.equal(points[0].lon, 6.12);
+  assert.equal(points[0].lat, 46.2);
+});
+
+test('WKT rejects malformed, empty, non-point, projected, and out-of-range values with row numbers', () => {
+  for(const geometry of ['', 'POINT EMPTY', 'LINESTRING (6 46)', 'POINT (6 46) trailing', 'POINT (6 46 12)', 'POINT (NaN 46)', 'POINT (6 91)', 'SRID=2056;POINT (6 46)']) {
+    assert.throws(() => api.pointsFromCsv('id,geom\na,'+geometry, {id:'id',coordinateSource:'geometry',geometry:'geom'}), /CSV row 2/);
+  }
+  assert.throws(() => api.pointsFromCsv('id,geom\na,POINT (6 46)', {id:'id',coordinateSource:'geometry',geometry:'missing'}), /Select a geometry column/);
+});
+
+test('explicit coordinate choice ignores unused columns in either mode', () => {
+  const csv = 'id,lon,lat,geom\na,7,47,POINT (6 46)';
+  const mapping = {id:'id',lon:'lon',lat:'lat',geometry:'geom'};
+  assert.equal(api.pointsFromCsv(csv, {...mapping,coordinateSource:'columns'})[0].lon, 7);
+  assert.equal(api.pointsFromCsv(csv, {...mapping,coordinateSource:'geometry'})[0].lon, 6);
+});
 
 const record = uid => ({ link: { type: 'Feature', properties: { __uid: uid, road_id: uid }, geometry: { type: 'LineString', coordinates: [[6, 46], [6.1, 46.1]] } }, matchedAt: '2026-09-22T10:00:00Z' });
 
@@ -60,19 +89,32 @@ test('next point skips matched points, wraps, respects filtered queue, and finis
   assert.equal(api.nextUnmatchedPoint(queue, undefined, matches).id, 'a');
 });
 
-test('fast confirmation saves preview and added links once, then starts next point', () => {
+test('fast confirmation saves the whole group and stays in place without starting another point', () => {
   let node;
-  const visit = item => { if (ts.isFunctionDeclaration(item) && item.name?.text === 'confirmAndNext') node = item; ts.forEachChild(item, visit); };
+  const visit = item => { if (ts.isFunctionDeclaration(item) && item.name?.text === 'confirmInPlace') node = item; ts.forEachChild(item, visit); };
   visit(ast);
-  let saved, nextPoint;
-  const context = { matching:true, mappingDialog:undefined, exportOpen:false, matchTargets:['a'], chosenLinks:[record('one').link], candidate:record('two').link, matchesRef:{current:new Map()}, filteredPoints:[{id:'a'}, {id:'b'}], selectedPointId:'a', search:'', setMatches:value => saved=value, setCheckedPoints:()=>{}, startMatchingPoint:value=>nextPoint=value, setNotice:()=>{} };
-  const confirm = vm.runInNewContext(`${js}; ${ts.transpile(node.getText(ast), {target:ts.ScriptTarget.ES2022})}; confirmAndNext`, context);
+  let saved, ended = false, cleared = false;
+  const fail = () => {throw new Error('Confirmation must not navigate');};
+  const context = { matching:true, mappingDialog:undefined, exportOpen:false, matchTargets:['a','b'], chosenLinks:[record('one').link], candidate:record('two').link, matchesRef:{current:new Map()}, setMatches:value => saved=value, setCheckedPoints:value=>cleared=value.length===0, setMatching:value=>ended=!value, setCandidates:()=>{}, setCandidateId:()=>{}, setChosenLinks:()=>{}, setMatchTargets:()=>{}, startMatchingPoint:fail, setSelectedPointId:fail, mapRef:{current:{easeTo:fail,flyTo:fail}}, setNotice:()=>{} };
+  const confirm = vm.runInNewContext(`${js}; ${ts.transpile(node.getText(ast), {target:ts.ScriptTarget.ES2022})}; confirmInPlace`, context);
   confirm();
   assert.equal(saved.get('a').length, 2);
-  assert.equal(nextPoint.id, 'b');
+  assert.equal(saved.get('b').length, 2);
+  assert.equal(ended, true);
+  assert.equal(cleared, true);
   context.candidate = record('one').link;
   confirm();
   assert.equal(saved.get('a').length, 2);
+});
+
+test('Ctrl-click toggles batch points and double-click retains the selected group', () => {
+  let ids = api.togglePointSelection([], 'a');
+  ids = api.togglePointSelection(ids, 'b');
+  assert.equal(JSON.stringify(api.targetsForPoint(ids, 'a')), JSON.stringify(['a','b']));
+  assert.equal(JSON.stringify(api.targetsForPoint(ids, 'c')), JSON.stringify(['c']));
+  ids = api.togglePointSelection(ids, 'a');
+  assert.equal(JSON.stringify(ids), JSON.stringify(['b']));
+  assert.equal(JSON.stringify(api.targetsForPoint(ids, 'b')), JSON.stringify(['b']));
 });
 
 test('batch matching preserves existing pairs and opposite directions, and ignores duplicates', () => {

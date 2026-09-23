@@ -35,7 +35,7 @@ The app opens with **3 synthetic points and 54 directed road links**, clipped fr
 - [Clipping polygon](web/public/demo-area.geojson)
 - [Example details and suggested matches](web/docs/DEMO.md)
 
-Double-click a point, click a road, right-click to switch direction, then Shift-click or press Enter to save and move to the next point. Upload your own points/network using the file buttons.
+Ctrl-click points (Cmd-click on Mac) to select a group, release Ctrl, then double-click one of the selected points to start matching them together. Click a road, right-click to switch direction, then Shift-click or press Enter or Space to save. The map stays in place so you can select nearby points next. Double-click an unselected point to match only that point. Upload your own points/network using the file buttons.
 
 ## Repository layout
 

@@ -12,6 +12,14 @@ type LinkFeature = GeoJSON.Feature<GeoJSON.LineString, Properties & { __uid: str
 type MatchRecord = { link: LinkFeature; matchedAt: string };
 type Matches = Map<string, MatchRecord[]>;
 
+function togglePointSelection(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id];
+}
+
+function targetsForPoint(ids: string[], id: string): string[] {
+  return ids.includes(id) ? [...ids] : [id];
+}
+
 function sameRoadGeometry(a: LinkFeature, b: LinkFeature): boolean {
   const x = a.geometry.coordinates, y = b.geometry.coordinates;
   if (x.length !== y.length) return false;
@@ -66,6 +74,17 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+function parsePointGeometry(value: string): [number, number] {
+  const number = "[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?";
+  const pattern = new RegExp(`^(?:SRID=(\\d+)\\s*;\\s*)?POINT\\s*\\(\\s*(${number})\\s+(${number})\\s*\\)$`, "i");
+  const match = value.trim().match(pattern);
+  if (!match) throw new Error("Expected a 2D WKT POINT (longitude latitude). Empty or non-point geometry is not supported.");
+  if (match[1] && Number(match[1]) !== 4326) throw new Error("Geometry must use WGS84 (EPSG:4326); projected coordinates must be converted first.");
+  const lon = Number(match[2]), lat = Number(match[3]);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) throw new Error("Geometry coordinates must be valid WGS84 longitude/latitude in degrees.");
+  return [lon, lat];
+}
+
 function pointsFromCsv(text: string, mapping?: Record<string, string>): PointRow[] {
   const rows = parseCsv(text.replace(/^\uFEFF/, ""));
   if (rows.length < 2) throw new Error("The CSV has no data rows.");
@@ -74,16 +93,25 @@ function pointsFromCsv(text: string, mapping?: Record<string, string>): PointRow
   if (headers.some(header => !header) || new Set(headers).size !== headers.length) throw new Error("Column names must be nonempty and unique.");
   const lonIndex = mapping ? headers.indexOf(mapping.lon) : lower.findIndex((name) => ["lon", "lng", "longitude", "x"].includes(name));
   const latIndex = mapping ? headers.indexOf(mapping.lat) : lower.findIndex((name) => ["lat", "latitude", "y"].includes(name));
-  if (lonIndex < 0 || latIndex < 0) throw new Error("The CSV needs lat/lon (or latitude/longitude) columns.");
+  const geometryMode = mapping?.coordinateSource === "geometry";
+  const geometryIndex = geometryMode ? headers.indexOf(mapping!.geometry) : -1;
+  if (geometryMode && geometryIndex < 0) throw new Error("Select a geometry column containing WKT POINT values.");
+  if (!geometryMode && (lonIndex < 0 || latIndex < 0)) throw new Error("Select longitude/latitude columns or choose Geometry (WKT POINT).");
   const idIndex = mapping ? headers.indexOf(mapping.id) : lower.findIndex((name) => ["id", "counter_id", "point_id"].includes(name));
-  if (lonIndex === latIndex) throw new Error("Latitude and longitude must use different columns.");
+  if (mapping && idIndex < 0) throw new Error("Select a valid unique point ID column.");
+  if (!geometryMode && lonIndex === latIndex) throw new Error("Latitude and longitude must use different columns.");
   const seen = new Set<string>();
   return rows.slice(1).map((values, index) => {
     const properties: Properties = {};
     headers.forEach((header, column) => { properties[header] = values[column] ?? ""; });
-    const lon = Number(values[lonIndex]);
-    const lat = Number(values[latIndex]);
-    if (!values[lonIndex]?.trim() || !values[latIndex]?.trim() || !Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) throw new Error(`Invalid WGS84 coordinates at CSV row ${index + 2}.`);
+    let lon: number, lat: number;
+    if (geometryMode) {
+      try { [lon, lat] = parsePointGeometry(values[geometryIndex] || ""); }
+      catch (error) { throw new Error(`CSV row ${index + 2}: ${error instanceof Error ? error.message : String(error)}`); }
+    } else {
+      lon = Number(values[lonIndex]); lat = Number(values[latIndex]);
+      if (!values[lonIndex]?.trim() || !values[latIndex]?.trim() || !Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) throw new Error(`Invalid WGS84 coordinates at CSV row ${index + 2}.`);
+    }
     const id = idIndex < 0 ? String(index + 1) : normalized(values[idIndex]);
     if (!id || seen.has(id)) throw new Error(`Empty or duplicate point ID at CSV row ${index + 2}. Select a unique identifier column.`);
     seen.add(id);
@@ -213,14 +241,14 @@ export default function MapMatcher() {
   const [pointMapping, setPointMapping] = useState({ id: "counter_id", label: "nom_voie", direction: "direction" });
   const [linkIdColumn, setLinkIdColumn] = useState("link_id");
   const [mappingDialog, setMappingDialog] = useState<{
-    title: string; columns: string[]; fields: { key: string; label: string; optional?: boolean }[];
+    title: string; columns: string[]; fields: { key: string; label: string; optional?: boolean }[]; coordinateChoice?: boolean;
     initial: Record<string, string>; apply: (mapping: Record<string, string>) => void | Promise<void>;
   }>();
   const [exportOpen, setExportOpen] = useState(false);
   const queuedPointIds = matching ? matchTargets : checkedPoints;
   const selectionRef = useRef({ points: [] as string[], links: [] as LinkFeature[] });
   selectionRef.current = { points: queuedPointIds, links: matching ? chosenLinks : [] };
-  const gestureRef = useRef({ cycle: () => {}, confirmNext: () => {} });
+  const gestureRef = useRef({ cycle: () => {}, confirm: () => {}, togglePoint: (_id: string) => {}, startPoint: (_point: PointRow) => {} });
   const guess = (columns: string[], names: string[]) => columns.find(column => names.includes(column.toLowerCase())) || "";
   const pointLabel = (point: PointRow) => point.properties[pointMapping.label] || point.id;
   const pointDirection = (point: PointRow) => point.properties[pointMapping.direction];
@@ -305,10 +333,16 @@ export default function MapMatcher() {
     });
     map.on("click", (event) => {
       if (modeRef.current && event.originalEvent.shiftKey) {
-        if (event.originalEvent.detail <= 1) gestureRef.current.confirmNext();
+        if (event.originalEvent.detail <= 1) gestureRef.current.confirm();
         return;
       }
       const pointHit = map.queryRenderedFeatures(event.point, { layers: ["points-circles"] })[0];
+      if (event.originalEvent.ctrlKey || event.originalEvent.metaKey) {
+        if (pointHit && !modeRef.current && event.originalEvent.detail <= 1) {
+          gestureRef.current.togglePoint(String(pointHit.properties?.id));
+        }
+        return;
+      }
       if (pointHit && !modeRef.current) { setSelectedPointId(String(pointHit.properties?.id)); setCandidates([]); setCandidateId(undefined); return; }
       if (!modeRef.current) return;
       const box: [[number, number], [number, number]] = [[event.point.x - 8, event.point.y - 8], [event.point.x + 8, event.point.y + 8]];
@@ -323,15 +357,13 @@ export default function MapMatcher() {
       setNotice(found.length ? `${found.length} directed link${found.length === 1 ? "" : "s"} found here` : "No link found — zoom in and click closer");
     });
     map.on("dblclick", (event) => {
+      if (event.originalEvent.ctrlKey || event.originalEvent.metaKey) return;
       const pointHit = map.queryRenderedFeatures(event.point, { layers: ["points-circles"] })[0];
       if (!pointHit) return;
       event.preventDefault();
       const point = pointsRef.current.find((item) => item.id === String(pointHit.properties?.id));
       if (!point) return;
-      setSelectedPointId(point.id); setMatching(true); setCandidates([]); setCandidateId(undefined);
-      setMatchTargets([point.id]); setChosenLinks([]);
-      setNotice("Click a road link near the selected point");
-      map.easeTo({ center: [point.lon, point.lat], zoom: Math.max(map.getZoom(), 16), duration: 350 });
+      gestureRef.current.startPoint(point);
     });
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
@@ -375,10 +407,16 @@ export default function MapMatcher() {
   }
 
   function startMatchingPoint(point: PointRow) {
-    setMatchTargets([point.id]); setChosenLinks([]);
+    const targets = targetsForPoint(checkedPoints, point.id);
+    setMatchTargets(targets); setCheckedPoints(targets); setChosenLinks([]);
     setSelectedPointId(point.id); setMatching(true); setCandidates([]); setCandidateId(undefined);
-    setNotice("Click a road link near the selected point");
-    mapRef.current?.easeTo({ center: [point.lon, point.lat], zoom: Math.max(mapRef.current.getZoom(), 16), duration: 350 });
+    setNotice(`Matching ${targets.length} point(s). Click a road, then Enter or Space to save without moving the map.`);
+  }
+
+  function toggleMapPoint(id: string) {
+    setCheckedPoints(current => togglePointSelection(current, id));
+    setSelectedPointId(id); setCandidates([]); setCandidateId(undefined);
+    setNotice("Point selection updated. Ctrl-click (Cmd-click on Mac) to toggle more; double-click a selected point to match the group.");
   }
 
   function cycleDirection() {
@@ -388,16 +426,16 @@ export default function MapMatcher() {
     const index = directions.findIndex(link => link.properties.__uid === candidateId);
     const next = directions[(index + 1) % directions.length];
     setCandidateId(next.properties.__uid);
-    setNotice(`Previewing link ${next.properties[linkIdColumn]}. Shift-click or Enter to save and go next.`);
+    setNotice(`Previewing link ${next.properties[linkIdColumn]}. Shift-click, Enter or Space to save without moving.`);
   }
 
   function addPreview() {
     if (!candidate) return;
     setChosenLinks(current => current.some(link => link.properties.__uid === candidate.properties.__uid) ? current : [...current, candidate]);
-    setNotice(`Link ${candidate.properties[linkIdColumn]} added. Click another road, or press Enter to save and go next.`);
+    setNotice(`Link ${candidate.properties[linkIdColumn]} added. Click another road, or press Enter or Space to save without moving.`);
   }
 
-  function confirmAndNext() {
+  function confirmInPlace() {
     if (!matching || mappingDialog || exportOpen || !matchTargets.length) return;
     const selected = [...new Map([...chosenLinks, ...(candidate ? [candidate] : [])].map(link => [link.properties.__uid, link])).values()];
     if (!selected.length) { setNotice("Click a road to preview a direction before confirming."); return; }
@@ -405,24 +443,18 @@ export default function MapMatcher() {
     const nextMatches = addMatches(matchesRef.current, matchTargets, selected.map(link => ({link, matchedAt})));
     matchesRef.current = nextMatches;
     setMatches(nextMatches); setCheckedPoints([]);
-    const next = nextUnmatchedPoint(filteredPoints, selectedPointId, nextMatches);
-    if (next) {
-      startMatchingPoint(next);
-      setNotice(`Saved ${matchTargets.length} point(s) to ${selected.length} link(s). Now matching ${next.id}.`);
-    } else {
-      setMatching(false); setCandidates([]); setCandidateId(undefined); setChosenLinks([]); setMatchTargets([]);
-      setNotice(search ? "Saved. No unmatched points remain in the current search. Clear search to continue." : "Saved. All points are matched!");
-    }
+    setMatching(false); setCandidates([]); setCandidateId(undefined); setChosenLinks([]); setMatchTargets([]);
+    setNotice(`Saved ${matchTargets.length} point(s) to ${selected.length} link(s). Select nearby points to continue; the map stays here.`);
   }
 
-  gestureRef.current = { cycle: cycleDirection, confirmNext: confirmAndNext };
+  gestureRef.current = { cycle: cycleDirection, confirm: confirmInPlace, togglePoint: toggleMapPoint, startPoint: startMatchingPoint };
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (!matching || mappingDialog || exportOpen || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && target.closest('input, textarea, select, button, a, [contenteditable="true"], dialog')) return;
-      if (event.key === "Enter") { event.preventDefault(); confirmAndNext(); }
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); confirmInPlace(); }
       else if (event.key.toLowerCase() === "a") { event.preventDefault(); addPreview(); }
       else if (event.key.toLowerCase() === "d") { event.preventDefault(); cycleDirection(); }
       else if (event.key === "Escape") {
@@ -440,9 +472,12 @@ export default function MapMatcher() {
       const text = await file.text();
       const columns = parseCsv(text.replace(/^\uFEFF/, ""))[0]?.map(column => column.trim()) || [];
       if (!columns.length) throw new Error("The CSV is empty.");
-      setMappingDialog({ title: `Point columns — ${file.name}`, columns,
-        fields: [{ key: "id", label: "Unique point ID" }, { key: "lon", label: "Longitude" }, { key: "lat", label: "Latitude" }, { key: "label", label: "Street / display name", optional: true }, { key: "direction", label: "Direction description", optional: true }],
-        initial: { id: guess(columns, ["id", "counter_id", "point_id"]), lon: guess(columns, ["lon", "lng", "longitude", "x"]), lat: guess(columns, ["lat", "latitude", "y"]), label: guess(columns, ["nom_voie", "street", "name"]), direction: guess(columns, ["direction", "bearing"]) },
+      const lon = guess(columns, ["lon", "lng", "long", "longitude", "x"]);
+      const lat = guess(columns, ["lat", "latitude", "y"]);
+      const geometry = guess(columns, ["geometry", "geom", "wkt", "the_geom"]);
+      setMappingDialog({ coordinateChoice: true, title: `Point columns — ${file.name}`, columns,
+        fields: [{ key: "id", label: "Unique point ID" }, { key: "lon", label: "Longitude" }, { key: "lat", label: "Latitude" }, { key: "geometry", label: "Geometry (WKT POINT)" }, { key: "label", label: "Street / display name", optional: true }, { key: "direction", label: "Direction description", optional: true }],
+        initial: { coordinateSource: (!lon || !lat) && geometry ? "geometry" : "columns", id: guess(columns, ["id", "counter_id", "point_id", "detid"]), lon, lat, geometry, label: guess(columns, ["nom_voie", "street", "name"]), direction: guess(columns, ["direction", "bearing", "fahrtricht"]) },
         apply: mapping => {
           const parsed = pointsFromCsv(text, mapping);
           setCheckedPoints([]); setMatchTargets([]); setChosenLinks([]);
@@ -594,7 +629,7 @@ export default function MapMatcher() {
           <input className="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search counters or roads…" aria-label="Search points" />
           <div className="point-list">
             <div className="batch-toolbar">
-              <small>Tick points to match them together ({checkedPoints.length} selected, including hidden search results).</small>
+              <small>Ctrl-click points on the map (Cmd-click on Mac), or tick them here ({checkedPoints.length} selected, including hidden search results).</small>
               <button disabled={!checkedPoints.length || matching} onClick={() => beginMatch(checkedPoints)}>Match selected points</button>
               <button disabled={!checkedPoints.length || matching} onClick={() => setCheckedPoints([])}>Clear selection</button>
             </div>
@@ -611,7 +646,8 @@ export default function MapMatcher() {
 
         <div className="map-panel">
           <div ref={mapContainer} className="map" />
-          {matching && <div className="gesture-help"><strong>Fast matching</strong><span>Click road: preview · Right-click / D: flip direction</span><span>Shift-click map / Enter: save preview + added links, then next point</span><span>A: add preview for multi-link match · Esc: cancel</span></div>}
+          {!matching && <div className="gesture-help"><strong>Select points nearby</strong><span>Ctrl-click (Mac: Cmd-click) points to select/deselect.</span><span>Release Ctrl, then double-click a selected point to match the group.</span></div>}
+          {matching && <div className="gesture-help"><strong>Fast matching</strong><span>Click road: preview · Right-click / D: flip direction</span><span>Shift-click / Enter / Space: save preview + added links; stay here</span><span>A: add preview for multi-link match · Esc: cancel</span></div>}
           <div className={`toast ${loading ? "loading" : ""}`}><i />{notice}</div>
           <div className="legend"><span><i className="point-key" />Unmatched</span><span><i className="point-key matched" />Matched</span><span><i className="line-key" />Network</span><span><i className="selection-key" />Selected in batch</span>{matching && <span><i className="preview-key" />Direction preview</span>}</div>
 
@@ -642,7 +678,7 @@ export default function MapMatcher() {
           </section>}
         </div>
       </section>
-      {mappingDialog && <MappingDialog key={mappingDialog.title} title={mappingDialog.title} columns={mappingDialog.columns} fields={mappingDialog.fields} initial={mappingDialog.initial} onApply={mappingDialog.apply} onClose={() => setMappingDialog(undefined)} />}
+      {mappingDialog && <MappingDialog coordinateChoice={mappingDialog.coordinateChoice} key={mappingDialog.title} title={mappingDialog.title} columns={mappingDialog.columns} fields={mappingDialog.fields} initial={mappingDialog.initial} onApply={mappingDialog.apply} onClose={() => setMappingDialog(undefined)} />}
       {exportOpen && <ExportDialog columns={exportColumns} makeCsv={exportMatches} onClose={() => setExportOpen(false)} onSaved={setNotice} />}
     </main>
   );

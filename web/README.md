@@ -31,14 +31,15 @@ The small Geneva demo (54 clipped links and 3 synthetic points) loads initially.
 
 | Action | Gesture / shortcut |
 | --- | --- |
-| Start matching a point | Double-click the point |
+| Select/deselect a batch point | Ctrl-click on the map (Cmd-click on Mac) |
+| Start matching selected group | Release Ctrl and double-click a selected point |
 | Preview a directed link | Click a road |
 | Cycle overlapping directions | Right-click the map or press `D` |
-| Save preview plus added links; start next unmatched point | Shift-click the map or press `Enter` |
+| Save preview plus added links; keep current view | Shift-click the map or press `Enter` or `Space` |
 | Add preview for a multi-link match | Press `A` |
 | Cancel pending selection | Press `Esc` |
 
-Next-point navigation follows the sidebar order and current search filter. For batch matching, tick points in the sidebar and click **Match selected points**. Every selected point is matched to every selected link.
+Confirmation never advances to another point or moves the map. Choose nearby points yourself. For batch matching, Ctrl-click points on the map, then double-click one of them. Sidebar checkboxes and **Match selected points** also remain available. Every selected point is matched to every selected link. Double-clicking an unselected point starts a single-point match instead.
 
 **Export before closing or refreshing.** Matches are held in browser memory, not automatically saved. Export one row per point-link pair; keep both ID columns to resume later using **Resume matched CSV**. Chrome and Edge support the Save As picker; other browsers use their download settings.
 
