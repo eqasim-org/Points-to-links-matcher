@@ -2,5 +2,3 @@
 *.bat text eol=crlf
 *.sh text eol=lf
 *.command text eol=lf
-*.png binary
-*.wasm binary

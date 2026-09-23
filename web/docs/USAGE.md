@@ -14,7 +14,7 @@ Local web app for matching CSV points to directed road-network links from a GeoP
 
 ## Start the app
 
-From the repository folder, double-click `start_linkmatch.bat`. The original launcher in the parent `matcher` folder also still works.
+Use `start_linkmatch.bat` on Windows, `start_linkmatch.command` on macOS, or `start_linkmatch.sh` on Linux. Launchers exist both at the repository root and inside `web/`. They install missing dependencies and open your browser when the app is ready. Keep the terminal open. On Linux select **Run in Terminal** if prompted, or run `sh start_linkmatch.sh`. If macOS/Linux reports permission denied after ZIP extraction, run `chmod +x start_linkmatch.command start_linkmatch.sh` once in that folder.
 
 Or open PowerShell in the repository folder and run:
 
@@ -22,7 +22,7 @@ Or open PowerShell in the repository folder and run:
 npm.cmd run local
 ```
 
-Then open <http://localhost:3000> in your browser. No account or sign-in is needed.
+The browser opens <http://localhost:3000> automatically. No account or sign-in is needed. Use `npm.cmd run local -- --no-open` to suppress browser opening.
 
 ## Match points to links
 

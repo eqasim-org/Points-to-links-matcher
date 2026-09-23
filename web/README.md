@@ -21,7 +21,7 @@ npm ci
 npm run local
 ```
 
-Open **http://localhost:3000**. On Windows, you can instead double-click `start_linkmatch.bat`; it installs dependencies if they are missing, then starts the app. In PowerShell, use `npm.cmd` if script execution policy blocks `npm`.
+Your default browser opens **http://localhost:3000** automatically once the app is ready. For one-click startup, use `start_linkmatch.bat` on Windows, `start_linkmatch.command` on macOS, or `start_linkmatch.sh` on Linux. These install dependencies if missing. Linux may require **Run in Terminal** or `sh start_linkmatch.sh`; automatic opening needs `xdg-open` and a desktop session. If ZIP extraction loses permissions on macOS/Linux, run `chmod +x start_linkmatch.command start_linkmatch.sh` once. In PowerShell, use `npm.cmd` if script execution policy blocks `npm`. To suppress browser opening, run `npm run local -- --no-open`.
 
 Stop with the **Stop app** button or `Ctrl+C` in the terminal. Keep ports 3000 and 3001 available. The Stop button requires `npm run local`, not `npm run dev`.
 

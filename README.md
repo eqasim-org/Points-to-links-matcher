@@ -4,7 +4,19 @@ A local web app to match CSV points to directed road links from a GeoPackage. No
 
 ## Run locally
 
-Install Node.js 22.13 or newer, then double-click `start_linkmatch.bat` on Windows, or run:
+Install Node.js 22.13 or newer (including npm), then use the launcher for your system:
+
+| System | Launcher |
+| --- | --- |
+| Windows | Double-click `start_linkmatch.bat` |
+| macOS | Double-click `start_linkmatch.command` |
+| Linux | Run `start_linkmatch.sh` (choose **Run in Terminal** if your file manager asks) |
+
+The launcher installs missing dependencies and opens your default browser automatically once the app is ready. Keep its terminal open while using the app. Linux needs a desktop environment and `xdg-open` for automatic browser opening.
+
+If a downloaded ZIP loses executable permissions on macOS/Linux, run `chmod +x start_linkmatch.command start_linkmatch.sh` once from the repository folder. Linux file managers differ: if double-click opens an editor, use `sh start_linkmatch.sh` in a terminal instead.
+
+Alternatively, start from a terminal:
 
 ```sh
 cd web
@@ -12,7 +24,7 @@ npm ci
 npm run local
 ```
 
-Open http://localhost:3000. Stop with **Stop app** or `Ctrl+C`. Export your matches before closing or refreshing.
+Your browser opens at http://localhost:3000 automatically. Stop with **Stop app** or `Ctrl+C`. Export your matches before closing or refreshing. Use `npm run local -- --no-open` inside `web/` if you do not want a browser window.
 
 ## Included practice example
 

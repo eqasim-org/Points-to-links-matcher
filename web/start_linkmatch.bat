@@ -16,7 +16,7 @@ if not exist "node_modules\vinext\dist\cli.js" (
     exit /b 1
   )
 )
-echo Starting LinkMatch. Open http://localhost:3000 when ready.
+echo Starting LinkMatch. Your browser will open automatically when ready.
 echo Keep this window open. Use Stop app or Ctrl+C to stop.
 call npm.cmd run local
 pause

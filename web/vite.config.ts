@@ -46,8 +46,8 @@ export default defineConfig(async () => {
   return {
     optimizeDeps: { exclude: ["maplibre-gl"] },
     server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+      ? { strictPort: true, watch: { useFsEvents: false, usePolling: true } }
+      : { strictPort: true },
     plugins: [
       vinext(),
       sites(),
