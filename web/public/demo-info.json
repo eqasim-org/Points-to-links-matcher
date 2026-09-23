@@ -1,0 +1,26 @@
+{
+  "bounds": [
+    6.142,
+    46.204,
+    6.145,
+    46.206
+  ],
+  "directed_links": 54,
+  "points": 3,
+  "synthetic_point_data": true,
+  "original_network_attributes_included": false,
+  "suggested_matches": [
+    {
+      "point_id": "DEMO-P001",
+      "suggested_link_id": "DEMO-L040"
+    },
+    {
+      "point_id": "DEMO-P002",
+      "suggested_link_id": "DEMO-L046"
+    },
+    {
+      "point_id": "DEMO-P003",
+      "suggested_link_id": "DEMO-L010"
+    }
+  ]
+}

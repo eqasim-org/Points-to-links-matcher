@@ -1,0 +1,4 @@
+counter_id,nom_voie,direction,lat,lon,notes
+DEMO-P001,Demo road 30,Toward south,46.20511335,6.14334319,Synthetic practice point; not a real count station
+DEMO-P002,Demo road 34,Toward south,46.20471127,6.14348324,Synthetic practice point; not a real count station
+DEMO-P003,Demo road 10,Toward south,46.20543304,6.14277533,Synthetic practice point; not a real count station

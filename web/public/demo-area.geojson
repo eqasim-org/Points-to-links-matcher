@@ -1,0 +1,33 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Geneva demo clipping polygon"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          6.142,
+          46.204
+        ],
+        [
+          6.145,
+          46.204
+        ],
+        [
+          6.145,
+          46.206
+        ],
+        [
+          6.142,
+          46.206
+        ],
+        [
+          6.142,
+          46.204
+        ]
+      ]
+    ]
+  }
+}

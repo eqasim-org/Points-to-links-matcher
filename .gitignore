@@ -1,0 +1,34 @@
+# Private source data and working exports
+/geneva/
+/zurich/
+/data/
+/exports/
+/.local-git-backup-web/
+*.csv
+*.geojson
+*.gpkg
+*.gpkg-shm
+*.gpkg-wal
+*.tar.gz
+*.zip
+
+# Explicitly approved, generated public demo only
+!/web/public/sample-points.csv
+!/web/public/sample-network.geojson
+!/web/public/sample-network.gpkg
+!/web/public/demo-area.geojson
+
+# Dependencies, build outputs, local configuration
+node_modules/
+.next/
+.vinext/
+.wrangler/
+dist/
+coverage/
+.env*
+*.tsbuildinfo
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
