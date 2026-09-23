@@ -108,6 +108,10 @@ button { color: inherit; }
 @keyframes pulse { 50% { opacity: .3; } }
 .legend { position: absolute; left: 16px; bottom: 17px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: rgba(255,255,255,.92); border: 1px solid rgba(222,223,217,.9); border-radius: 8px; box-shadow: 0 3px 12px rgba(23,42,36,.08); font-size: 9px; color: #52615c; }
 .legend span { display: flex; align-items: center; gap: 5px; }
+.legend { flex-wrap: wrap; max-width: calc(100% - 80px); }
+.selection-key, .preview-key { width: 17px; height: 5px; border-radius: 3px; background: #7c3aed; }
+.preview-key { background: #f04438; }
+.point-choice.in-batch { background: #f3eaff; border-radius: 9px; box-shadow: inset 3px 0 #7c3aed; }
 .gesture-help { position: absolute; left: 16px; bottom: 60px; max-width: min(420px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.95); font-size: 11px; color: #41514b; pointer-events: none; }
 .point-key { width: 8px; height: 8px; display: block; border-radius: 50%; border: 1.5px solid white; box-shadow: 0 0 0 1px #bcc3c0; }
 .point-key { background: #e53935; }

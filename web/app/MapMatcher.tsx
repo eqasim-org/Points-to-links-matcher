@@ -142,10 +142,11 @@ async function linksFromGpkg(file: File, layer?: string): Promise<LinkFeature[]>
   } finally { database.close(); }
 }
 
-function pointCollection(points: PointRow[], matches: Matches, selectedId?: string): GeoJSON.FeatureCollection {
+function pointCollection(points: PointRow[], matches: Matches, selectedId?: string, queuedIds: string[] = []): GeoJSON.FeatureCollection {
+  const queued = new Set(queuedIds);
   return { type: "FeatureCollection", features: points.map((point) => ({
     type: "Feature", id: point.id,
-    properties: { id: point.id, matched: matches.has(point.id) ? 1 : 0, selected: selectedId === point.id ? 1 : 0 },
+    properties: { id: point.id, matched: matches.has(point.id) ? 1 : 0, selected: selectedId === point.id ? 1 : 0, queued: queued.has(point.id) ? 1 : 0 },
     geometry: { type: "Point", coordinates: [point.lon, point.lat] },
   })) };
 }
@@ -171,6 +172,12 @@ function arrowCollection(link?: LinkFeature): GeoJSON.FeatureCollection {
 function csvCell(value: unknown): string {
   const text = value == null ? "" : String(value);
   return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function selectedLinkCollection(links: LinkFeature[]): GeoJSON.FeatureCollection {
+  return { type: "FeatureCollection", features: links.flatMap(link => arrowCollection(link).features.map(feature => ({
+    ...feature, properties: { ...feature.properties, linkId: link.properties.__uid },
+  }))) };
 }
 
 function shortCoordinate(coordinate: GeoJSON.Position) { return `${coordinate[1].toFixed(5)}, ${coordinate[0].toFixed(5)}`; }
@@ -210,6 +217,9 @@ export default function MapMatcher() {
     initial: Record<string, string>; apply: (mapping: Record<string, string>) => void | Promise<void>;
   }>();
   const [exportOpen, setExportOpen] = useState(false);
+  const queuedPointIds = matching ? matchTargets : checkedPoints;
+  const selectionRef = useRef({ points: [] as string[], links: [] as LinkFeature[] });
+  selectionRef.current = { points: queuedPointIds, links: matching ? chosenLinks : [] };
   const gestureRef = useRef({ cycle: () => {}, confirmNext: () => {} });
   const guess = (columns: string[], names: string[]) => columns.find(column => names.includes(column.toLowerCase())) || "";
   const pointLabel = (point: PointRow) => point.properties[pointMapping.label] || point.id;
@@ -258,13 +268,17 @@ export default function MapMatcher() {
           basemap: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, attribution: "© OpenStreetMap contributors" },
           network: { type: "geojson", data: emptyCollection(), promoteId: "__uid" },
           direction: { type: "geojson", data: emptyCollection() },
+          selection: { type: "geojson", data: emptyCollection() },
           points: { type: "geojson", data: emptyCollection() },
         },
         layers: [
           { id: "basemap", type: "raster", source: "basemap" },
           { id: "network-lines", type: "line", source: "network", paint: { "line-color": "#17365d", "line-opacity": 0.5, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.2, 15, 3.4] } },
+          { id: "selection-halo", type: "line", source: "selection", paint: { "line-color": "#ffffff", "line-width": 15, "line-opacity": 0.9 } },
+          { id: "selection-lines", type: "line", source: "selection", paint: { "line-color": "#7c3aed", "line-width": 12, "line-opacity": 0.85 } },
           { id: "direction-halo", type: "line", source: "direction", paint: { "line-color": "#ffffff", "line-width": 9, "line-opacity": 0.95 } },
           { id: "direction-line", type: "line", source: "direction", paint: { "line-color": "#f04438", "line-width": 5 } },
+          { id: "points-selection", type: "circle", source: "points", filter: ["==", ["get", "queued"], 1], paint: { "circle-radius": 15, "circle-color": "#ffffff", "circle-opacity": 0.7, "circle-stroke-color": "#7c3aed", "circle-stroke-width": 3 } },
           { id: "points-halo", type: "circle", source: "points", paint: { "circle-radius": ["case", ["==", ["get", "selected"], 1], 12, 9], "circle-color": "#ffffff", "circle-opacity": 0.96 } },
           { id: "points-circles", type: "circle", source: "points", paint: { "circle-radius": ["case", ["==", ["get", "selected"], 1], 8, 6], "circle-color": ["case", ["==", ["get", "matched"], 1], "#17875f", "#e53935"], "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } },
         ],
@@ -281,7 +295,8 @@ export default function MapMatcher() {
     });
     map.on("style.load", () => {
       (map.getSource("network") as GeoJSONSource).setData({ type: "FeatureCollection", features: linksRef.current });
-      (map.getSource("points") as GeoJSONSource).setData(pointCollection(pointsRef.current, matchesRef.current, selectedPointRef.current));
+      (map.getSource("points") as GeoJSONSource).setData(pointCollection(pointsRef.current, matchesRef.current, selectedPointRef.current, selectionRef.current.points));
+      (map.getSource("selection") as GeoJSONSource).setData(selectedLinkCollection(selectionRef.current.links));
       setMapReady(true);
     });
     map.on("mousemove", (event) => {
@@ -331,8 +346,14 @@ export default function MapMatcher() {
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const source = mapRef.current.getSource("points") as GeoJSONSource | undefined;
-    source?.setData(pointCollection(points, matches, selectedPointId));
-  }, [points, matches, selectedPointId, mapReady]);
+    source?.setData(pointCollection(points, matches, selectedPointId, queuedPointIds));
+  }, [points, matches, selectedPointId, queuedPointIds, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const source = mapRef.current.getSource("selection") as GeoJSONSource | undefined;
+    source?.setData(selectedLinkCollection(matching ? chosenLinks : []));
+  }, [chosenLinks, matching, mapReady]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -579,7 +600,7 @@ export default function MapMatcher() {
             </div>
             {filteredPoints.map((point) => {
               const isSelected = point.id === selectedPointId, isMatched = matches.has(point.id);
-              return <div key={point.id} className="point-choice"><input type="checkbox" aria-label={`Select point ${point.id} for batch matching`} checked={checkedPoints.includes(point.id)} disabled={matching} onChange={event => setCheckedPoints(current => event.target.checked ? [...current, point.id] : current.filter(id => id !== point.id))} /><button className={`point-row ${isSelected ? "selected" : ""}`} onClick={() => focusPoint(point)} onDoubleClick={() => startMatchingPoint(point)} title="Double-click to start matching">
+              return <div key={point.id} className={`point-choice ${queuedPointIds.includes(point.id) ? "in-batch" : ""}`}><input type="checkbox" aria-label={`Select point ${point.id} for batch matching`} checked={checkedPoints.includes(point.id)} disabled={matching} onChange={event => setCheckedPoints(current => event.target.checked ? [...current, point.id] : current.filter(id => id !== point.id))} /><button className={`point-row ${isSelected ? "selected" : ""}`} onClick={() => focusPoint(point)} onDoubleClick={() => startMatchingPoint(point)} title="Double-click to start matching">
                 <span className={`status-dot ${isMatched ? "done" : ""}`}>{isMatched ? "✓" : ""}</span>
                 <span><b>{pointLabel(point)}</b><small>{point.id} · {pointDirection(point) || `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`}</small></span>
                 <em>›</em>
@@ -592,7 +613,7 @@ export default function MapMatcher() {
           <div ref={mapContainer} className="map" />
           {matching && <div className="gesture-help"><strong>Fast matching</strong><span>Click road: preview · Right-click / D: flip direction</span><span>Shift-click map / Enter: save preview + added links, then next point</span><span>A: add preview for multi-link match · Esc: cancel</span></div>}
           <div className={`toast ${loading ? "loading" : ""}`}><i />{notice}</div>
-          <div className="legend"><span><i className="point-key" />Unmatched</span><span><i className="point-key matched" />Matched</span><span><i className="line-key" />Network</span></div>
+          <div className="legend"><span><i className="point-key" />Unmatched</span><span><i className="point-key matched" />Matched</span><span><i className="line-key" />Network</span><span><i className="selection-key" />Selected in batch</span>{matching && <span><i className="preview-key" />Direction preview</span>}</div>
 
           {selectedPoint && <section className={`match-card ${matching ? "matching" : ""}`}>
             <div className="match-heading">
@@ -612,7 +633,7 @@ export default function MapMatcher() {
               <div className="candidate-list">{candidates.map((link, index) => {
                 const coords = link.geometry.coordinates, uid = String(link.properties.__uid);
                 return <button key={uid} className={candidateId === uid ? "active" : ""} onClick={() => setCandidateId(uid)}>
-                  <i>{index + 1}</i><span><b>Link {link.properties[linkIdColumn] ?? uid}</b><small>{shortCoordinate(coords[0])} <em>→</em> {shortCoordinate(coords[coords.length - 1])}</small></span><strong className="radio" />
+                  <i>{index + 1}</i><span><b>Link {link.properties[linkIdColumn] ?? uid}{chosenLinks.some(item => item.properties.__uid === uid) ? " (added)" : ""}</b><small>{shortCoordinate(coords[0])} <em>→</em> {shortCoordinate(coords[coords.length - 1])}</small></span><strong className="radio" />
                 </button>;
               })}</div>
               <button className="confirm-button" disabled={!candidate || chosenLinks.some(link => link.properties.__uid === candidateId)} onClick={() => { if (candidate) setChosenLinks(current => current.some(link => link.properties.__uid === candidate.properties.__uid) ? current : [...current, candidate]); }}>Add this direction to selection</button>

@@ -7,13 +7,40 @@ import assert from 'node:assert/strict';
 // Exercise the actual import/parser functions without starting WebGL or a browser.
 const source = readFileSync(new URL('../app/MapMatcher.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('MapMatcher.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const wanted = new Set(['parseCsv', 'pointsFromCsv', 'normalized', 'csvCell', 'addMatches', 'removeMatch', 'pointCollection', 'sameRoadGeometry', 'nextUnmatchedPoint']);
+const wanted = new Set(['parseCsv', 'pointsFromCsv', 'normalized', 'csvCell', 'addMatches', 'removeMatch', 'pointCollection', 'sameRoadGeometry', 'nextUnmatchedPoint', 'arrowCollection', 'selectedLinkCollection']);
 const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) && wanted.has(node.name?.text)).map(node => node.getText(ast)).join('\n');
 const js = ts.transpile(functions, { target: ts.ScriptTarget.ES2022 });
-const api = vm.runInNewContext(`${js}; ({pointsFromCsv, parseCsv, csvCell, addMatches, removeMatch, pointCollection, sameRoadGeometry, nextUnmatchedPoint})`);
+const api = vm.runInNewContext(`${js}; ({pointsFromCsv, parseCsv, csvCell, addMatches, removeMatch, pointCollection, sameRoadGeometry, nextUnmatchedPoint, selectedLinkCollection})`);
 const mapping = { id: 'Sensor', lon: 'Easting', lat: 'Northing' };
 
 const record = uid => ({ link: { type: 'Feature', properties: { __uid: uid, road_id: uid }, geometry: { type: 'LineString', coordinates: [[6, 46], [6.1, 46.1]] } }, matchedAt: '2026-09-22T10:00:00Z' });
+
+test('batch point highlights persist when focus moves and preserve match status', () => {
+  const points = ['a','b','c'].map(id => ({id,lon:6,lat:46}));
+  const matches = api.addMatches(new Map(), ['a'], [record('one')]);
+  const result = api.pointCollection(points, matches, 'c', ['a','b']).features;
+  assert.equal(result[0].properties.queued, 1);
+  assert.equal(result[1].properties.queued, 1);
+  assert.equal(result[2].properties.queued, 0);
+  assert.equal(result[0].properties.matched, 1);
+  assert.equal(result[1].properties.matched, 0);
+  assert.equal(result[2].properties.selected, 1);
+  const cleared = api.pointCollection(points, matches, 'c', []).features;
+  assert.ok(cleared.every(feature => feature.properties.queued === 0));
+});
+
+test('selected link overlay retains all added directions and clears removed links', () => {
+  const forward = record('forward').link, reverse = record('reverse').link;
+  reverse.geometry.coordinates.reverse();
+  const selected = api.selectedLinkCollection([forward,reverse]);
+  assert.equal(selected.features.length, 4); // line and arrowhead per direction
+  assert.equal(selected.features[0].properties.linkId, 'forward');
+  assert.equal(selected.features[2].properties.linkId, 'reverse');
+  assert.equal(JSON.stringify(selected.features[0].geometry.coordinates), JSON.stringify(forward.geometry.coordinates));
+  assert.equal(JSON.stringify(selected.features[2].geometry.coordinates), JSON.stringify(reverse.geometry.coordinates));
+  assert.equal(api.selectedLinkCollection([reverse]).features.length, 2);
+  assert.equal(api.selectedLinkCollection([]).features.length, 0);
+});
 
 test('direction cycling groups reversed geometry, not unrelated roads at junctions', () => {
   const forward = record('a').link, reverse = record('b').link, other = record('c').link;

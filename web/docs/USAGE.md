@@ -40,6 +40,8 @@ Adding links preserves previous matches and ignores duplicate pairs. Opposite-di
 
 ## Fast mouse and keyboard workflow
 
+During multi-selection, added links stay purple on the map (with direction arrows), and selected points have purple rings and highlighted sidebar rows. The current direction preview is orange-red, separate from the links already added. Point centres remain red/green for unmatched/matched status. Press **A** or **Add this direction to selection** to retain a link before previewing another. Removing a link or clearing point selection removes its batch highlight. Confirming or cancelling clears the pending link overlay; remaining checked points still show their selection rings.
+
 - Double-click a point (map or sidebar) to start matching.
 - Click a road to preview its directed link and arrow.
 - Right-click anywhere on the map, or press **D**, to cycle directions with the same geometry. This does not select unrelated roads at a junction. Right-drag rotation is disabled.
