@@ -1,6 +1,6 @@
 # Points-to-links matcher (LinkMatch)
 
-A local web app to match CSV points to directed road links from a GeoPackage. No accounts required. Supports overlapping directions, multiple point-link matches, fast mouse gestures, and resumable CSV exports.
+A local web app to match CSV points to directed road links from a GeoPackage. No accounts required. Supports overlapping directions, multiple point-link matches, and resumable CSV exports.
 
 ## Run locally
 
@@ -29,7 +29,6 @@ Double-click a point, click a road, right-click to switch direction, then Shift-
 
 - `web/`: application, browser demo fixtures, tests, and detailed documentation.
 - `.github/workflows/`: tests/build automation for the application.
-- `geneva/`, `zurich/`: private local working data, ignored by Git.
 - `LICENSE`: project MIT license; source road geometry retains any applicable upstream terms.
 
 See the [application README](web/README.md), [user guide](web/docs/USAGE.md), and [publication checklist](web/docs/PUBLISHING.md).
