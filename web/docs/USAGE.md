@@ -57,6 +57,10 @@ A batch confirmation saves all selected point-link combinations and clears the p
 
 ## Continue another day
 
+To undo matching for just one point, click its green dot (or its sidebar row). In the selected-point box, click **Unmatch point** above its saved links. This removes all that point's link associations, turns its dot red, and autosaves the change. Other points, including those matched to the same link, are untouched. Use **Remove match** beside an individual saved link if you only want to remove that one association.
+
+To start matching the same data again, click **Clear all matches** in the save-status bar. Confirm the warning to remove all saved matches and pending selections. Your loaded points, network, column mappings, and map position stay unchanged. The reset is autosaved; wait for **Saved on this device**. This cannot be undone in the app, so export a CSV backup first if you may want to restore the old matches.
+
 Normally, just start LinkMatch again and open `http://localhost:3000` in the same browser/profile. Your files, column mapping, matches, map position, and pending selection restore automatically. Do not re-upload the original files merely to resume: replacing a dataset starts a replacement workspace and clears its matches (with a confirmation warning).
 
 Local saving is indicated below the header. **Saving locally** means the write has not completed; **Saved on this device** means it has. **AUTOSAVE FAILED** means export a CSV immediately and use Retry save. Refreshing while a save is pending requests a browser leave-page warning where supported. Never rely on a last-second save during shutdown.

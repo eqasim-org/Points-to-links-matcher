@@ -13,6 +13,50 @@ const js = ts.transpile(functions, { target: ts.ScriptTarget.ES2022 });
 const api = vm.runInNewContext(`${js}; ({togglePointSelection, targetsForPoint, pointsFromCsv, parseCsv, csvCell, addMatches, removeMatch, pointCollection, sameRoadGeometry, nextUnmatchedPoint, selectedLinkCollection})`);
 const mapping = { id: 'Sensor', lon: 'Easting', lat: 'Northing' };
 
+test('unmatching selected point removes all its links, preserves other points, and clears the preview', () => {
+  let node;
+  const visit = item => { if (ts.isFunctionDeclaration(item) && item.name?.text === 'unmatchSelectedPoint') node = item; ts.forEachChild(item, visit); };
+  visit(ast);
+  const other = [{link:{properties:{__uid:'shared'}}}];
+  const original = new Map([['a',[...other,{link:{properties:{__uid:'second'}}}]],['b',other]]);
+  let saved, preview = 'shared';
+  const context = {selectedPoint:{id:'a'},matchesRef:{current:original},setMatches:value=>saved=value,setCandidates:()=>{},setCandidateId:value=>preview=value,setNotice:()=>{}};
+  const unmatch = vm.runInNewContext(ts.transpile(node.getText(ast),{target:ts.ScriptTarget.ES2022})+';unmatchSelectedPoint',context);
+  unmatch();
+  assert.equal(saved.has('a'),false);
+  assert.equal(saved.get('b'),other);
+  assert.equal(original.has('a'),true);
+  assert.equal(context.matchesRef.current,saved);
+  assert.equal(preview,undefined);
+  unmatch(); // Already unmatched: safe no-op.
+  assert.equal(saved.size,1);
+});
+
+test('clear all requires confirmation and resets matches/selections without changing datasets or viewport', () => {
+  let node;
+  const visit = item => { if (ts.isFunctionDeclaration(item) && item.name?.text === 'clearAllMatches') node = item; ts.forEachChild(item, visit); };
+  visit(ast);
+  const calls = new Map();
+  const original = new Map([['a', []]]);
+  let approved = false;
+  const context = {window:{confirm:() => approved}, matchesRef:{current:original}};
+  for(const name of ['setMatches','setMatching','setCheckedPoints','setMatchTargets','setChosenLinks','setCandidates','setCandidateId','setSelectedPointId','setSearch','setNotice']) context[name] = value => calls.set(name,value);
+  const forbidden = () => { throw new Error('Reset must preserve datasets and viewport'); };
+  Object.assign(context,{setPoints:forbidden,setLinks:forbidden,setPointMapping:forbidden,setLinkIdColumn:forbidden,mapRef:{current:{easeTo:forbidden,fitBounds:forbidden}}});
+  const clear = vm.runInNewContext(ts.transpile(node.getText(ast),{target:ts.ScriptTarget.ES2022})+';clearAllMatches',context);
+  clear();
+  assert.equal(calls.size,0);
+  assert.equal(context.matchesRef.current,original);
+  approved = true;
+  clear();
+  assert.equal(calls.get('setMatches').size,0);
+  assert.equal(context.matchesRef.current.size,0);
+  assert.equal(calls.get('setMatching'),false);
+  for(const name of ['setCheckedPoints','setMatchTargets','setChosenLinks','setCandidates']) assert.equal(calls.get(name).length,0);
+  assert.equal(calls.get('setSelectedPointId'),undefined);
+  assert.equal(calls.get('setSearch'),'');
+});
+
 test('WKT geometry import preserves IDs and attributes without coordinate columns', () => {
   const points = api.pointsFromCsv('detid,direction,geometry\n001,North,POINT (6.12 46.2)', {id:'detid',coordinateSource:'geometry',geometry:'geometry'});
   assert.equal(points[0].id, '001');

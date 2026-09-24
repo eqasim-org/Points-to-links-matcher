@@ -675,6 +675,27 @@ export default function MapMatcher() {
     setNotice(`Matched ${matchTargets.length} point(s) to ${chosenLinks.length} link(s). Existing matches kept; duplicate pairs ignored.`);
   }
 
+  function clearAllMatches() {
+    if (!window.confirm("Clear ALL matches and pending selections? Your loaded points and network will stay. This reset replaces the autosaved matches and cannot be undone here. Export a CSV backup first if you want to keep your work.")) return;
+    const empty: Matches = new Map();
+    matchesRef.current = empty;
+    setMatches(empty);
+    setMatching(false); setCheckedPoints([]); setMatchTargets([]);
+    setChosenLinks([]); setCandidates([]); setCandidateId(undefined);
+    setSelectedPointId(undefined); setSearch("");
+    setNotice("All matches and selections cleared. Loaded points and network kept. The reset is being autosaved.");
+  }
+
+  function unmatchSelectedPoint() {
+    if (!selectedPoint || !matchesRef.current.has(selectedPoint.id)) return;
+    const next = new Map(matchesRef.current);
+    next.delete(selectedPoint.id);
+    matchesRef.current = next;
+    setMatches(next);
+    setCandidates([]); setCandidateId(undefined);
+    setNotice(`Point ${selectedPoint.id} is now unmatched. Other points are unchanged; autosaving.`);
+  }
+
   const exportColumns: ExportColumn[] = useMemo(() => {
     const matched = points.filter(point => matches.has(point.id));
     const pointColumns = [...new Set(matched.flatMap(point => Object.keys(point.properties)))];
@@ -735,6 +756,7 @@ export default function MapMatcher() {
         <span>{saveStatus === "saved" ? `Saved on this device at ${savedAt}` : saveStatus === "saving" ? "Saving locally... wait before closing." : `AUTOSAVE FAILED: ${saveError}. Export a CSV backup now.`}</span>
         {saveStatus === "error" && <button onClick={() => setSaveAttempt(value => value + 1)}>Retry save</button>}
         <small>Use this browser at localhost:3000 to resume. Keep CSV backups too.</small>
+        <button className="clear-matches-button" onClick={clearAllMatches} disabled={stopping || loading || (!matches.size && !matching && !checkedPoints.length && !chosenLinks.length)} title="Clear all matches and selections, keeping loaded data">Clear all matches</button>
         <button onClick={() => { setMapReady(false); setMapIssue(""); setMapEpoch(value => value + 1); }}>Redraw map</button>
       </div>
       <section className="workspace">
@@ -773,7 +795,7 @@ export default function MapMatcher() {
               {!matching && <button className="match-button" onClick={() => beginMatch()}>{matches.has(selectedPoint.id) ? "Add links" : "Match to links"}<span>→</span></button>}
               {matching && <button className="cancel-button" onClick={() => { setMatching(false); setCandidates([]); setCandidateId(undefined); }}>Cancel</button>}
             </div>
-            {!matching && (matches.get(selectedPoint.id) || []).length > 0 && <div className="saved-matches"><strong>Saved links for this point</strong>{matches.get(selectedPoint.id)!.map(record => <div key={record.link.properties.__uid}><button onClick={() => setCandidateId(record.link.properties.__uid)}>Show link {record.link.properties[linkIdColumn]}</button><button onClick={() => setMatches(current => removeMatch(current, selectedPoint.id, record.link.properties.__uid))}>Remove match</button></div>)}</div>}
+            {!matching && (matches.get(selectedPoint.id) || []).length > 0 && <div className="saved-matches"><button className="unmatch-point-button" onClick={unmatchSelectedPoint} title="Remove all saved link matches from this point only">Unmatch point ({matches.get(selectedPoint.id)!.length} link(s))</button><strong>Saved links for this point</strong>{matches.get(selectedPoint.id)!.map(record => <div key={record.link.properties.__uid}><button onClick={() => setCandidateId(record.link.properties.__uid)}>Show link {record.link.properties[linkIdColumn]}</button><button onClick={() => setMatches(current => removeMatch(current, selectedPoint.id, record.link.properties.__uid))}>Remove match</button></div>)}</div>}
             {matching && <div className="batch-summary"><strong>Matching {matchTargets.length} point(s)</strong><small>Every selected point will be matched to every added link. Existing matches are kept.</small><small>Point IDs: {matchTargets.join(", ")}</small></div>}
             {matching && <div className="point-data">
               <div className="point-data-title"><span className="eyebrow">POINT DATA</span><small>{Object.keys(selectedPoint.properties).length} columns</small></div>

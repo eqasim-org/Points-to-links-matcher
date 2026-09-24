@@ -19,6 +19,8 @@
 .recovery-screen button, .save-status button { border: 1px solid #aab9b1; border-radius: 6px; padding: 5px 10px; background: white; cursor: pointer; }
 .save-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 20px; background: #eef8f1; color: #236145; font-size: 12px; flex-shrink: 0; }
 .save-status small { margin-left: auto; }
+.save-status .clear-matches-button { color: #a31818; border-color: #dcaaaa; }
+.save-status button:disabled { opacity: .45; cursor: default; }
 .save-status.saving { background: #fff7db; color: #73540c; }
 .save-status.error { background: #ffe5e5; color: #a31818; font-weight: 600; }
 .map-issue { position: absolute; left: 20px; top: 60px; max-width: 400px; padding: 12px; background: #fff3cd; color: #663c00; border-radius: 8px; z-index: 2; }
@@ -96,6 +98,7 @@ button { color: inherit; }
 .chosen-links > div, .saved-matches > div { display: flex; justify-content: space-between; gap: 5px; }
 .chosen-links > div button, .saved-matches button { overflow-wrap: anywhere; }
 .batch-toolbar button:disabled { opacity: .5; cursor: default; }
+.saved-matches .unmatch-point-button { color: #a31818; border-color: #dcaaaa; background: #fff2f2; font-weight: 650; text-align: left; }
 .point-row.selected { background: var(--peach); }
 .point-row > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; }
 .point-row b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
