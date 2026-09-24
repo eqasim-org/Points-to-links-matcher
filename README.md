@@ -24,11 +24,11 @@ npm ci
 npm run local
 ```
 
-Your browser opens at http://localhost:3000 automatically. Stop with **Stop app** or `Ctrl+C`. Export your matches before closing or refreshing. Use `npm run local -- --no-open` inside `web/` if you do not want a browser window.
+Your browser opens at http://localhost:3000 automatically. Stop with **Stop app** or `Ctrl+C`. Your workspace autosaves locally; wait for **Saved on this device** before closing. Reopen the same browser/profile/address to resume your data and matches automatically. Keep CSV exports as independent backups: clearing browser data or using private browsing can remove autosaves. Use `npm run local -- --no-open` inside `web/` if you do not want a browser window.
 
 ## Included practice example
 
-The app opens with **3 synthetic points and 54 directed road links**, clipped from Geneva to a rectangle about **230 by 220 metres**. Only road geometry is retained from the original network; all IDs/names are demo labels. No private count records or original network attributes are included.
+On first use (when no saved workspace exists), the app opens with **3 synthetic points and 54 directed road links**, clipped from Geneva to a rectangle about **230 by 220 metres**. Later visits restore your own workspace. Only road geometry is retained from the example's original network; all IDs/names are demo labels. No private count records or original network attributes are included.
 
 - [Example points CSV](web/public/sample-points.csv)
 - [Example network GeoPackage](web/public/sample-network.gpkg)

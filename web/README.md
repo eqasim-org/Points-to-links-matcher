@@ -41,7 +41,11 @@ The small Geneva demo (54 clipped links and 3 synthetic points) loads initially.
 
 Confirmation never advances to another point or moves the map. Choose nearby points yourself. For batch matching, Ctrl-click points on the map, then double-click one of them. Sidebar checkboxes and **Match selected points** also remain available. Every selected point is matched to every selected link. Double-clicking an unselected point starts a single-point match instead.
 
-**Export before closing or refreshing.** Matches are held in browser memory, not automatically saved. Export one row per point-link pair; keep both ID columns to resume later using **Resume matched CSV**. Chrome and Edge support the Save As picker; other browsers use their download settings.
+**Automatic local saving:** loaded datasets, column mappings, confirmed matches, pending selections, search, and map position are saved in this browser's IndexedDB. Wait for **Saved on this device** before closing or refreshing. Reopening the same browser profile at `http://localhost:3000` restores that workspace before attempting to load the demo. A second tab is blocked from editing the same workspace to avoid conflicting saves.
+
+**Keep CSV backups too.** Browser data can be cleared or evicted, private browsing is temporary, and other browsers/profiles/origins (including `127.0.0.1` instead of `localhost`) have separate storage. Save failures are shown prominently with a retry button; they do not count as successful autosaves. If restore fails, the saved data is preserved instead of overwritten by the demo. Export one row per point-link pair; keep both ID columns to resume using **Resume matched CSV** on another browser or computer. Chrome and Edge support the Save As picker; other browsers use their download settings.
+
+If the map goes blank after sleep, use **Redraw map** to recreate it without discarding the in-memory workspace. Map graphics are also repainted when the tab becomes visible. This improves recovery but cannot guarantee that a browser/graphics crash never happens. Replacing loaded files replaces the current local workspace; export a backup first. There is currently one autosaved workspace per browser profile and origin, not a project-history manager.
 
 See the [complete user guide](docs/USAGE.md) for imports, exports, direction selection, and resuming work.
 

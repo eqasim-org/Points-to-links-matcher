@@ -5,12 +5,13 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import initSqlJs from "sql.js";
 import { MappingDialog, ExportDialog, type ExportColumn } from "./FileDialogs";
+import { claimWorkspace, createSessionStore, type Session, type MapView } from "./session";
 
 type Properties = Record<string, string | number | null>;
-type PointRow = { id: string; properties: Properties; lon: number; lat: number };
-type LinkFeature = GeoJSON.Feature<GeoJSON.LineString, Properties & { __uid: string }>;
+export type PointRow = { id: string; properties: Properties; lon: number; lat: number };
+export type LinkFeature = GeoJSON.Feature<GeoJSON.LineString, Properties & { __uid: string }>;
 type MatchRecord = { link: LinkFeature; matchedAt: string };
-type Matches = Map<string, MatchRecord[]>;
+export type Matches = Map<string, MatchRecord[]>;
 
 function togglePointSelection(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id];
@@ -245,6 +246,22 @@ export default function MapMatcher() {
     initial: Record<string, string>; apply: (mapping: Record<string, string>) => void | Promise<void>;
   }>();
   const [exportOpen, setExportOpen] = useState(false);
+  const sessionStore = useRef<ReturnType<typeof createSessionStore> | null>(null);
+  if (!sessionStore.current) sessionStore.current = createSessionStore();
+  const [sessionReady, setSessionReady] = useState(false);
+  const [bootError, setBootError] = useState("");
+  const [bootAttempt, setBootAttempt] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error">("saving");
+  const [saveError, setSaveError] = useState("");
+  const [savedAt, setSavedAt] = useState("");
+  const [saveAttempt, setSaveAttempt] = useState(0);
+  const latestSnapshot = useRef<Session | undefined>(undefined);
+  const savedSnapshot = useRef<Session | undefined>(undefined);
+  const [view, setView] = useState<MapView>();
+  const viewRef = useRef<MapView | undefined>(undefined);
+  const viewPointsRef = useRef<PointRow[] | undefined>(undefined);
+  const [mapEpoch, setMapEpoch] = useState(0);
+  const [mapIssue, setMapIssue] = useState("");
   const queuedPointIds = matching ? matchTargets : checkedPoints;
   const selectionRef = useRef({ points: [] as string[], links: [] as LinkFeature[] });
   selectionRef.current = { points: queuedPointIds, links: matching ? chosenLinks : [] };
@@ -267,26 +284,92 @@ export default function MapMatcher() {
   selectedPointRef.current = selectedPointId;
 
   useEffect(() => {
-    Promise.all([
-      fetch("/sample-points.csv").then((response) => response.text()),
-      fetch("/sample-network.geojson").then((response) => response.json()),
-    ]).then(([csv, geojson]) => {
-      const parsedPoints = pointsFromCsv(csv);
-      const parsedLinks = (geojson.features as LinkFeature[]).map((feature, index) => ({
-        ...feature, id: String(feature.properties.__uid ?? feature.properties.fid ?? index + 1),
-        properties: { ...feature.properties, __uid: String(feature.properties.__uid ?? feature.properties.fid ?? index + 1) },
-      }));
-      setPoints(parsedPoints); setLinks(parsedLinks); setSelectedPointId(parsedPoints[0]?.id);
-      setNotice("Sample data ready"); setLoading(false);
-    }).catch((error) => { setNotice(error instanceof Error ? error.message : "Could not load sample data"); setLoading(false); });
-  }, []);
+    let cancelled = false;
+    let release: (() => void) | undefined;
+    setBootError("");
+    void (async () => {
+      try {
+        release = await claimWorkspace();
+        if (cancelled) { release(); return; }
+        const saved = await sessionStore.current!.load();
+        if (cancelled) return;
+        if (saved) {
+          linksById.current = new Map(saved.links.map(link => [link.properties.__uid, link]));
+          setPoints(saved.points); setLinks(saved.links); setMatches(saved.matches);
+          setPointFile(saved.pointFile); setNetworkFile(saved.networkFile);
+          setPointMapping(saved.pointMapping); setLinkIdColumn(saved.linkIdColumn);
+          setSelectedPointId(saved.selectedPointId); setSearch(saved.search);
+          setCheckedPoints(saved.checkedPoints || []); setMatchTargets(saved.matchTargets || []);
+          setChosenLinks((saved.chosenLinkIds || []).map(id => linksById.current.get(id)).filter((link): link is LinkFeature => !!link));
+          setCandidates((saved.candidateIds || []).map(id => linksById.current.get(id)).filter((link): link is LinkFeature => !!link));
+          setCandidateId(saved.candidateId); setMatching(saved.matching);
+          viewRef.current = saved.view; viewPointsRef.current = saved.points; setView(saved.view);
+          setNotice(`Restored your workspace: ${saved.points.length} points, ${saved.matches.size} matched. No files need reloading.`);
+        } else {
+          const [csv, geojson] = await Promise.all([
+            fetch("/sample-points.csv").then(response => { if (!response.ok) throw new Error("Could not load demo points."); return response.text(); }),
+            fetch("/sample-network.geojson").then(response => { if (!response.ok) throw new Error("Could not load demo network."); return response.json(); }),
+          ]);
+          if (cancelled) return;
+          const parsedPoints = pointsFromCsv(csv);
+          const parsedLinks = (geojson.features as LinkFeature[]).map((feature, index) => ({
+            ...feature, id: String(feature.properties.__uid ?? feature.properties.fid ?? index + 1),
+            properties: { ...feature.properties, __uid: String(feature.properties.__uid ?? feature.properties.fid ?? index + 1) },
+          }));
+          setPoints(parsedPoints); setLinks(parsedLinks); setSelectedPointId(parsedPoints[0]?.id);
+          setNotice("No saved workspace yet. Demo ready; your work will now save automatically.");
+        }
+        setSessionReady(true); setLoading(false);
+        // Best effort: ask the browser not to evict this local workspace under storage pressure.
+        void navigator.storage?.persist?.().catch(() => {});
+      } catch (error) {
+        if (!cancelled) { setBootError(error instanceof Error ? error.message : String(error)); setLoading(false); }
+        release?.();
+      }
+    })();
+    return () => { cancelled = true; release?.(); };
+  }, [bootAttempt]);
+
+  const snapshot = useMemo<Session>(() => ({
+    points, links, matches, pointFile, networkFile, pointMapping, linkIdColumn, selectedPointId, search, view,
+    checkedPoints, matchTargets, chosenLinkIds: chosenLinks.map(link => link.properties.__uid),
+    matching, candidateIds: candidates.map(link => link.properties.__uid), candidateId,
+  }), [points, links, matches, pointFile, networkFile, pointMapping, linkIdColumn, selectedPointId, search, view,
+    checkedPoints, matchTargets, chosenLinks, matching, candidates, candidateId]);
+  latestSnapshot.current = snapshot;
+  viewRef.current = view;
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    setSaveStatus("saving"); setSaveError("");
+    void sessionStore.current!.save(snapshot).then(() => {
+      savedSnapshot.current = snapshot;
+      if (latestSnapshot.current === snapshot) {
+        setSaveStatus("saved"); setSavedAt(new Date().toLocaleTimeString());
+      }
+    }).catch(error => {
+      if (latestSnapshot.current === snapshot) {
+        setSaveStatus("error"); setSaveError(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, [snapshot, sessionReady, saveAttempt]);
+
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (sessionReady && savedSnapshot.current !== latestSnapshot.current) {
+        event.preventDefault(); event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [sessionReady]);
 
   useEffect(() => {
     linksById.current = new Map(links.map((link) => [String(link.properties.__uid), link]));
   }, [links]);
 
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
+    if (!sessionReady || !mapContainer.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: mapContainer.current,
       center: [6.1432, 46.2044], zoom: 11.3,
@@ -314,6 +397,19 @@ export default function MapMatcher() {
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
     map.doubleClickZoom.disable();
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      setView({ center: [center.lng, center.lat], zoom: map.getZoom() });
+    });
+    map.on("webglcontextlost", event => {
+      event.originalEvent.preventDefault();
+      setMapIssue("The browser paused the map graphics. Your workspace is still here. Wait for recovery or use Redraw map.");
+    });
+    map.on("webglcontextrestored", () => {
+      map.resize(); map.triggerRepaint(); setMapIssue("");
+    });
+    const wakeMap = () => { if (!document.hidden) { map.resize(); map.triggerRepaint(); } };
+    document.addEventListener("visibilitychange", wakeMap);
     // Right-click is reserved for direction selection, not map rotation.
     map.dragRotate.disable();
     map.on("contextmenu", event => {
@@ -366,8 +462,8 @@ export default function MapMatcher() {
       gestureRef.current.startPoint(point);
     });
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
-  }, []);
+    return () => { document.removeEventListener("visibilitychange", wakeMap); map.remove(); mapRef.current = null; };
+  }, [sessionReady, mapEpoch]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -395,6 +491,11 @@ export default function MapMatcher() {
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !points.length) return;
+    if (viewRef.current && viewPointsRef.current === points) {
+      mapRef.current.jumpTo(viewRef.current);
+      return;
+    }
+    viewPointsRef.current = points;
     const bounds = new maplibregl.LngLatBounds();
     points.forEach((point) => bounds.extend([point.lon, point.lat]));
     const width = mapRef.current.getCanvas().clientWidth;
@@ -480,6 +581,7 @@ export default function MapMatcher() {
         initial: { coordinateSource: (!lon || !lat) && geometry ? "geometry" : "columns", id: guess(columns, ["id", "counter_id", "point_id", "detid"]), lon, lat, geometry, label: guess(columns, ["nom_voie", "street", "name"]), direction: guess(columns, ["direction", "bearing", "fahrtricht"]) },
         apply: mapping => {
           const parsed = pointsFromCsv(text, mapping);
+          if (matchesRef.current.size && !window.confirm("Replacing the points clears current matches and replaces this browser's autosaved workspace. Export a CSV backup first if you need this work. Continue?")) return;
           setCheckedPoints([]); setMatchTargets([]); setChosenLinks([]);
           setPoints(parsed); setPointMapping({ id: mapping.id, label: mapping.label, direction: mapping.direction });
           setPointFile(file.name); setMatches(new Map()); setSelectedPointId(parsed[0]?.id); setMatching(false); setCandidates([]); setCandidateId(undefined);
@@ -507,6 +609,7 @@ export default function MapMatcher() {
         setMappingDialog({ title: "Network columns", columns, fields: [{ key: "id", label: "Unique directed link ID" }], initial: { id: guess(columns, ["link_id", "fid", "id"]) }, apply: selected => {
           const ids = parsed.map(link => normalized(link.properties[selected.id]));
           if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error("Choose a nonempty, unique ID for each directed link. An OSM way ID shared by opposite directions is not suitable.");
+          if (matchesRef.current.size && !window.confirm("Replacing the network clears current matches and replaces this browser's autosaved workspace. Export a CSV backup first if you need this work. Continue?")) return;
           setLinks(parsed); setLinkIdColumn(selected.id); setNetworkFile(file.name); setMatches(new Map()); setMatching(false); setCandidates([]); setCandidateId(undefined);
           setCheckedPoints([]); setMatchTargets([]); setChosenLinks([]);
           setNotice(`${parsed.length.toLocaleString()} directed links loaded`); setMappingDialog(undefined);
@@ -597,14 +700,20 @@ export default function MapMatcher() {
 
   async function stopApp() {
     try {
+      const stoppingSnapshot = latestSnapshot.current!;
+      await sessionStore.current!.save(stoppingSnapshot);
+      savedSnapshot.current = stoppingSnapshot;
+      setSaveStatus("saved");
       const response = await fetch("http://127.0.0.1:3001/stop", { method: "POST" });
       if (!response.ok) throw new Error("Stop request failed");
       setStopping(true);
       setNotice("LinkMatch stopped — you can close this browser tab");
     } catch {
-      setNotice("Use start_linkmatch.bat to enable the Stop app button");
+      setNotice("Could not save or stop safely. Export a CSV backup and retry. Use a LinkMatch launcher to enable Stop app.");
     }
   }
+
+  if (!sessionReady) return <main className="recovery-screen"><h1>LinkMatch</h1><p>{bootError || "Restoring your locally saved workspace..."}</p>{bootError && <><p>Your saved workspace has not been replaced by the demo. Close other LinkMatch tabs if open, then retry.</p><button onClick={() => setBootAttempt(value => value + 1)}>Retry restore</button></>}</main>;
 
   return (
     <main className="app-shell">
@@ -622,6 +731,12 @@ export default function MapMatcher() {
         </div>
       </header>
 
+      <div className={`save-status ${saveStatus}`} role="status">
+        <span>{saveStatus === "saved" ? `Saved on this device at ${savedAt}` : saveStatus === "saving" ? "Saving locally... wait before closing." : `AUTOSAVE FAILED: ${saveError}. Export a CSV backup now.`}</span>
+        {saveStatus === "error" && <button onClick={() => setSaveAttempt(value => value + 1)}>Retry save</button>}
+        <small>Use this browser at localhost:3000 to resume. Keep CSV backups too.</small>
+        <button onClick={() => { setMapReady(false); setMapIssue(""); setMapEpoch(value => value + 1); }}>Redraw map</button>
+      </div>
       <section className="workspace">
         <aside className="sidebar">
           <div className="progress-card"><div><span>PROGRESS</span><strong>{matches.size} <small>/ {points.length}</small></strong></div><div className="progress-track"><i style={{ width: `${points.length ? matches.size / points.length * 100 : 0}%` }} /></div><p>{points.length - matches.size} points remaining</p></div>
@@ -646,6 +761,7 @@ export default function MapMatcher() {
 
         <div className="map-panel">
           <div ref={mapContainer} className="map" />
+          {mapIssue && <div className="map-issue" role="alert">{mapIssue}</div>}
           {!matching && <div className="gesture-help"><strong>Select points nearby</strong><span>Ctrl-click (Mac: Cmd-click) points to select/deselect.</span><span>Release Ctrl, then double-click a selected point to match the group.</span></div>}
           {matching && <div className="gesture-help"><strong>Fast matching</strong><span>Click road: preview · Right-click / D: flip direction</span><span>Shift-click / Enter / Space: save preview + added links; stay here</span><span>A: add preview for multi-link match · Esc: cancel</span></div>}
           <div className={`toast ${loading ? "loading" : ""}`}><i />{notice}</div>

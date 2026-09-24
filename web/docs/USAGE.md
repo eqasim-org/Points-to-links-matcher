@@ -53,9 +53,19 @@ During multi-selection, added links stay purple on the map (with direction arrow
 - Press **A** to add the previewed link when matching several links; click another road and repeat, then confirm with Enter, Space, or Shift-click.
 - Press **Esc** to cancel the pending selection without changing saved matches.
 
-A batch confirmation saves all selected point-link combinations and clears the pending selection. Choose the next nearby points yourself. Shortcuts do not run while typing, using buttons, or working in a file dialog. Space is prevented from scrolling when it confirms a map match. Matches still need to be exported before closing or refreshing the app.
+A batch confirmation saves all selected point-link combinations and clears the pending selection. Choose the next nearby points yourself. Shortcuts do not run while typing, using buttons, or working in a file dialog. Space is prevented from scrolling when it confirms a map match. Wait for **Saved on this device** before closing or refreshing, and export CSV backups regularly.
 
 ## Continue another day
+
+Normally, just start LinkMatch again and open `http://localhost:3000` in the same browser/profile. Your files, column mapping, matches, map position, and pending selection restore automatically. Do not re-upload the original files merely to resume: replacing a dataset starts a replacement workspace and clears its matches (with a confirmation warning).
+
+Local saving is indicated below the header. **Saving locally** means the write has not completed; **Saved on this device** means it has. **AUTOSAVE FAILED** means export a CSV immediately and use Retry save. Refreshing while a save is pending requests a browser leave-page warning where supported. Never rely on a last-second save during shutdown.
+
+If the map goes white, first try **Redraw map**, which retains the current in-memory data. Sleep/tab graphics restoration is handled where possible. If you need to reload, the last completed autosave will be restored. The demo is loaded only if storage contains no workspace; a storage read failure does not silently replace it.
+
+Only one tab can edit the workspace at a time. Close the other tab and click Retry restore if told the workspace is in use. Save data stays on this device; it is not uploaded or committed to Git. Private windows, browser-data cleanup, disk/storage failures, or changing browser/profile/address can make this local copy unavailable. Old work lost before autosave was introduced cannot be reconstructed automatically.
+
+For a separate backup, or moving to another browser/computer:
 
 1. Before stopping, click **Export matched CSV**.
 2. Next time, start LinkMatch and load the same full points CSV and network if they are not the included samples.

@@ -15,6 +15,13 @@
 .export-columns label { display: flex; align-items: center; gap: 9px; padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; }
 .export-columns small { margin-left: auto; color: #64766c; overflow-wrap: anywhere; }
 .file-error { color: #b42318; }
+.recovery-screen { max-width: 650px; margin: 12vh auto; padding: 24px; }
+.recovery-screen button, .save-status button { border: 1px solid #aab9b1; border-radius: 6px; padding: 5px 10px; background: white; cursor: pointer; }
+.save-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 20px; background: #eef8f1; color: #236145; font-size: 12px; flex-shrink: 0; }
+.save-status small { margin-left: auto; }
+.save-status.saving { background: #fff7db; color: #73540c; }
+.save-status.error { background: #ffe5e5; color: #a31818; font-weight: 600; }
+.map-issue { position: absolute; left: 20px; top: 60px; max-width: 400px; padding: 12px; background: #fff3cd; color: #663c00; border-radius: 8px; z-index: 2; }
 
 :root {
   --ink: #172a24;

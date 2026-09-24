@@ -10,7 +10,7 @@
     "local": "node scripts/start-local.mjs",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "node --test tests/file-mapping.test.mjs tests/public-demo.test.mjs tests/launcher.test.mjs",
+    "test": "node --test tests/file-mapping.test.mjs tests/public-demo.test.mjs tests/launcher.test.mjs tests/session.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
